@@ -1,0 +1,13 @@
+[package]
+name = "csv_upload_test"
+version = "0.1.0"
+authors = ["kempchee <fotingkempchee@gmail.com>"]
+
+[dependencies]
+postgres ="*"
+iron = "*"
+rustc-serialize = "0.3"
+router ="*"
+hyper="*"
+[dependencies.persistent]
+git = "https://github.com/iron/persistent.git"
