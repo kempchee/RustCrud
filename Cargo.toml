@@ -9,5 +9,6 @@ iron = "*"
 rustc-serialize = "0.3"
 router ="*"
 hyper="*"
+unicase="*"
 [dependencies.persistent]
 git = "https://github.com/iron/persistent.git"
