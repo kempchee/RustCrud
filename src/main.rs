@@ -33,6 +33,11 @@ struct ClientWrapper{
     client:Client
 }
 
+#[derive(RustcDecodable, RustcEncodable)]
+struct ClientsWrapper{
+    clients:Client
+}
+
 struct ResponseTime;
 
 #[derive(RustcDecodable, RustcEncodable)]
