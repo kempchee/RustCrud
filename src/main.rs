@@ -1,3 +1,4 @@
+#![feature(collections)]
 extern crate iron;
 extern crate router;
 extern crate hyper;
@@ -5,6 +6,9 @@ extern crate postgres;
 extern crate rustc_serialize;
 extern crate persistent;
 extern crate unicase;
+extern crate csv;
+extern crate chrono;
+extern crate regex;
 
 use postgres::{Connection, SslMode};
 use iron::prelude::*;
@@ -15,12 +19,14 @@ use iron::{AfterMiddleware,BeforeMiddleware,Headers};
 use hyper::net::NetworkStream;
 use hyper::buffer::BufReader;
 use std::io;
-use rustc_serialize::json;
+use rustc_serialize::json::{self, ToJson, Json};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use iron::typemap::Key;
 use hyper::method::Method;
 use unicase::UniCase;
+use std::collections::BTreeMap;
+use regex::Regex;
 
 #[derive(RustcDecodable, RustcEncodable)]
 struct Client {
@@ -36,6 +42,27 @@ struct ClientWrapper{
 #[derive(RustcDecodable, RustcEncodable)]
 struct ClientsWrapper{
     clients:Client
+}
+
+#[derive(RustcDecodable, RustcEncodable)]
+struct Record{
+    recordType:String,
+    amount:f64
+}
+
+struct Upload{
+    name:String,
+    createdAt:chrono::NaiveDate
+}
+
+impl ToJson for Upload{
+    fn to_json(&self) -> Json {
+        let mut d = BTreeMap::new();
+        // All standard types implement `to_json()`, so use it
+        d.insert("name".to_string(), self.name.to_json());
+        d.insert("createdAt".to_string(), format!("{}",self.createdAt.format("%D")).to_json());
+        Json::Object(d)
+    }
 }
 
 struct ResponseTime;
@@ -79,18 +106,43 @@ fn hello_world(request: &mut Request) -> IronResult<Response> {
     Ok(Response::with((status::Ok, payload)))
 }
 
+fn upload_record(request: &mut Request) -> IronResult<Response> {
+    //thread::sleep_ms(5000);
+    //let webkit_unique=&(request.headers.get::<iron::headers::ContentType>().unwrap().0).2[0].1.to_string();
+    //let mut search_string="((?is)--".to_string()+webkit_unique;
+    //search_string=search_string.to_string()+".*?--";
+    //search_string=search_string.to_string()+webkit_unique;
+    //search_string=search_string.to_string()+")";
+    //println!("{}",search_string);
+    let re = Regex::new(r"((?s)Content-Type: text/csv\r\n\r\n.*?\n\r)").unwrap();
+    let new_re=Regex::new(r"(\s)+").unwrap();
+    let mut payload = String::new();
+    request.body.read_to_string(&mut payload).unwrap();
+    let form_match=re.captures(&payload).unwrap().at(1).unwrap_or("").replace("Content-Type: text/csv","\n");
+    let final_csv=Regex::new(r"\s{2,}").unwrap().replace_all(&form_match,"");
+    let mut new_csv_rdr = csv::Reader::from_string(final_csv);
+    for record in new_csv_rdr.decode() {
+        let record: Record = record.unwrap();
+        println!("({}, {})", record.recordType, record.amount);
+    }
+    //println!("{:?}",final_csv);
+
+    Ok(Response::with((status::Ok, json::encode(&payload).unwrap())))
+    //Ok(Response::with((status::Ok, "{\"client\":{\"id\":\"46\",\"name\":\"zzz\"}}")))
+}
+
 fn create_client(request: &mut Request) -> IronResult<Response> {
     //thread::sleep_ms(5000);
     let mut payload = String::new();
     request.body.read_to_string(&mut payload).unwrap();
-    //let mut new_client_wrapper: ClientWrapper = json::decode(&payload).unwrap();
+    let mut new_client_wrapper: ClientWrapper = json::decode(&payload).unwrap();
     println!("{}","hi");
-    let mut new_client:Client=json::decode(&payload).unwrap();
+    let mut new_client:Client=Client{id:0,name:"".to_string()};
     println!("boo");
     let mutex = request.get::<persistent::Read<PostgresWrapper>>().unwrap();
     let connection=mutex.lock().unwrap();
     let statement=connection.prepare("INSERT INTO client (name) VALUES ($1) RETURNING *").unwrap();
-    let query_result=statement.query(&[&new_client.name]).unwrap();
+    let query_result=statement.query(&[&new_client_wrapper.client.name]).unwrap();
     for client_row in query_result{
         let hello:i32=client_row.get(0);
         println!("{}",hello);
@@ -135,6 +187,7 @@ fn main() {
     router.get("/", hello_world);
     router.get("/clients",clients_index);
     router.post("/clients", create_client);
+    router.post("/upload_record",upload_record);
     let mut message_chain = Chain::new(router);
     message_chain.link_after(ResponseTime);
     message_chain.link(persistent::Read::<PostgresWrapper>::both(conn));
