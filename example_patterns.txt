@@ -1,0 +1,34 @@
+impl ToJson for Upload{
+    fn to_json(&self) -> Json {
+        let mut d = BTreeMap::new();
+        // All standard types implement `to_json()`, so use it
+        d.insert("name".to_string(), self.name.to_json());
+        d.insert("createdAt".to_string(), format!("{}",self.createdAt.format("%D")).to_json());
+        Json::Object(d)
+    }
+}
+
+
+//let webkit_unique=&(request.headers.get::<iron::headers::ContentType>().unwrap().0).2[0].1.to_string();
+  //let mut search_string="((?is)--".to_string()+webkit_unique;
+  //search_string=search_string.to_string()+".*?--";
+  //search_string=search_string.to_string()+webkit_unique;
+  //search_string=search_string.to_string()+")";
+  //println!("{}",search_string);
+
+
+  impl rustc_serialize::Decodable for MyDateTime{
+      fn decode<D: rustc_serialize::Decoder>(d: &mut D) -> Result<MyDateTime, D::Error> {
+          println!("{:?}",d.read_str().ok().unwrap());
+          Ok(MyDateTime{
+              time:NaiveDateTime::from_timestamp(100,24)
+              })
+      }
+  }
+
+CREATE TABLE records (
+  id serial not null,
+  record_type varchar(100),
+  amount double precision,
+  created_at timestamp default current_timestamp
+)

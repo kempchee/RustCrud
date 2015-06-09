@@ -60,39 +60,28 @@ impl fmt::Debug for MyDateTime{
 }
 
 #[derive(RustcDecodable)]
-struct Record{
+struct InboundRecord{
+    record_type:String,
+    amount:f64
+}
+
+#[derive(RustcEncodable)]
+struct OutboundRecord{
     id: i32,
-    recordType:String,
+    record_type:String,
     amount:f64,
-    createdAt:MyDateTime
+    createdAt:String
 }
 
 
 
-
-impl rustc_serialize::Decodable for MyDateTime{
-    fn decode<D: rustc_serialize::Decoder>(d: &mut D) -> Result<MyDateTime, D::Error> {
-        Ok(MyDateTime{
-            time:NaiveDateTime::from_timestamp(100,24)
-            })
-    }
-}
-
-struct Upload{
+struct InboundUpload{
     id: i32,
     name:String,
     createdAt:chrono::NaiveDateTime
 }
 
-impl ToJson for Upload{
-    fn to_json(&self) -> Json {
-        let mut d = BTreeMap::new();
-        // All standard types implement `to_json()`, so use it
-        d.insert("name".to_string(), self.name.to_json());
-        d.insert("createdAt".to_string(), format!("{}",self.createdAt.format("%D")).to_json());
-        Json::Object(d)
-    }
-}
+
 
 struct ResponseTime;
 
@@ -137,12 +126,6 @@ fn hello_world(request: &mut Request) -> IronResult<Response> {
 
 fn upload_record(request: &mut Request) -> IronResult<Response> {
     //thread::sleep_ms(5000);
-    //let webkit_unique=&(request.headers.get::<iron::headers::ContentType>().unwrap().0).2[0].1.to_string();
-    //let mut search_string="((?is)--".to_string()+webkit_unique;
-    //search_string=search_string.to_string()+".*?--";
-    //search_string=search_string.to_string()+webkit_unique;
-    //search_string=search_string.to_string()+")";
-    //println!("{}",search_string);
     let re = Regex::new(r"((?s)Content-Type: text/csv\r\n\r\n.*?\n\r)").unwrap();
     let new_re=Regex::new(r"(\s)+").unwrap();
     let mut payload = String::new();
@@ -150,12 +133,12 @@ fn upload_record(request: &mut Request) -> IronResult<Response> {
     let form_match=re.captures(&payload).unwrap().at(1).unwrap_or("").replace("Content-Type: text/csv","\n");
     let final_csv=Regex::new(r"\s{2,}").unwrap().replace_all(&form_match,"");
     let mut new_csv_rdr = csv::Reader::from_string(final_csv);
-
     let mutex = request.get::<persistent::Read<PostgresWrapper>>().unwrap();
     let connection=mutex.lock().unwrap();
     for record in new_csv_rdr.decode() {
-        let record: Record = record.unwrap();
-        println!("({}, {},{},{:?})", record.recordType, record.amount,record.id, record.createdAt);
+        let record: InboundRecord = record.unwrap();
+        let statement=connection.prepare("INSERT INTO records (record_type,amount) VALUES ($1,$2) RETURNING *").unwrap();
+        let query_result=statement.query(&[&record.record_type,&record.amount]).unwrap();
     }
     //println!("{:?}",final_csv);
 
