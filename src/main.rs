@@ -9,6 +9,7 @@ extern crate unicase;
 extern crate csv;
 extern crate chrono;
 extern crate regex;
+extern crate time;
 
 use postgres::{Connection, SslMode};
 use iron::prelude::*;
@@ -27,6 +28,9 @@ use hyper::method::Method;
 use unicase::UniCase;
 use std::collections::BTreeMap;
 use regex::Regex;
+use chrono::naive::datetime::NaiveDateTime;
+use std::fmt;
+
 
 #[derive(RustcDecodable, RustcEncodable)]
 struct Client {
@@ -44,15 +48,40 @@ struct ClientsWrapper{
     clients:Client
 }
 
-#[derive(RustcDecodable, RustcEncodable)]
+
+struct MyDateTime{
+    time:NaiveDateTime
+}
+
+impl fmt::Debug for MyDateTime{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.time)
+    }
+}
+
+#[derive(RustcDecodable)]
 struct Record{
+    id: i32,
     recordType:String,
-    amount:f64
+    amount:f64,
+    createdAt:MyDateTime
+}
+
+
+
+
+impl rustc_serialize::Decodable for MyDateTime{
+    fn decode<D: rustc_serialize::Decoder>(d: &mut D) -> Result<MyDateTime, D::Error> {
+        Ok(MyDateTime{
+            time:NaiveDateTime::from_timestamp(100,24)
+            })
+    }
 }
 
 struct Upload{
+    id: i32,
     name:String,
-    createdAt:chrono::NaiveDate
+    createdAt:chrono::NaiveDateTime
 }
 
 impl ToJson for Upload{
@@ -121,9 +150,12 @@ fn upload_record(request: &mut Request) -> IronResult<Response> {
     let form_match=re.captures(&payload).unwrap().at(1).unwrap_or("").replace("Content-Type: text/csv","\n");
     let final_csv=Regex::new(r"\s{2,}").unwrap().replace_all(&form_match,"");
     let mut new_csv_rdr = csv::Reader::from_string(final_csv);
+
+    let mutex = request.get::<persistent::Read<PostgresWrapper>>().unwrap();
+    let connection=mutex.lock().unwrap();
     for record in new_csv_rdr.decode() {
         let record: Record = record.unwrap();
-        println!("({}, {})", record.recordType, record.amount);
+        println!("({}, {},{},{:?})", record.recordType, record.amount,record.id, record.createdAt);
     }
     //println!("{:?}",final_csv);
 
