@@ -1,0 +1,2 @@
+Transaction Id,Transaction Code,Transaction Type,Account Id,Product Type of Account,Transaction Date,Transaction Amount,Debit or Credit,Business or Personal ,Domestic or International,Risk rating,Customer_Industry Type
+123456789,45,Wire In,123456789,DDA,1/1/2015,23.43,Debit,Business,International,9,Construction

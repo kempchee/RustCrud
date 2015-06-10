@@ -32,3 +32,20 @@ CREATE TABLE records (
   amount double precision,
   created_at timestamp default current_timestamp
 )
+
+CREATE TABLE transactions (
+  id serial not null,
+  external_transaction_id varchar(100)
+  transaction_code varchar(100),
+  transaction_type varchar(100),
+  external_account_id varchar(100),
+  product_type varchar(100),
+  transaction_date date,
+  transaction_amount double precision,
+  debit_credit varchar(100),
+  business_personal varchar(100),
+  domestic_international varchar(100),
+  risk_rating int,
+  customer_industry_type varchar(100),
+  created_at timestamp default current_timestamp
+)
