@@ -81,11 +81,11 @@ struct InboundTransaction{
     external_account_id:String,
     product_type:String,
     transaction_date:String,
-    transaction_amount:f64,
+    transaction_amount:String,
     debit_credit:String,
     business_personal:String,
     domestic_international:String,
-    risk_rating:i32,
+    risk_rating:Option<String>,
     customer_industry_type:String
 }
 
@@ -212,27 +212,35 @@ fn upload_transactions_inserts(request: &mut Request) -> IronResult<Response> {
         let transaction: InboundTransaction = transaction.unwrap();
         //let statement=connection.prepare("INSERT INTO records (record_type,amount) VALUES ($1,$2) RETURNING *").unwrap();
         //let query_result=statement.query(&[&record.record_type,&record.amount]).unwrap();
-        insert_list.push(format!("('{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}')",
+        let date_vec=transaction.transaction_date.split("/").map(|x|x.parse::<u32>().ok().unwrap()).collect::<Vec<u32>>();
+        let date=chrono::naive::date::NaiveDate::from_ymd(date_vec[2] as i32,date_vec[0],date_vec[1]);
+        let risk_rating=if transaction.risk_rating.is_some(){
+            transaction.risk_rating.unwrap()
+        }else{
+            "NULL".to_string()
+        };
+        insert_list.push(format!("('{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', {}, '{}')",
             transaction.external_transaction_id,
             transaction.transaction_code,
             transaction.transaction_type,
             transaction.external_account_id,
             transaction.product_type,
-            transaction.transaction_date,
+            date,
             transaction.transaction_amount,
             transaction.debit_credit,
             transaction.business_personal,
             transaction.domestic_international,
-            transaction.risk_rating,
+            risk_rating,
             transaction.customer_industry_type
         ));
         if insert_list.len()>9999{
-            connection.execute(&format!("INSERT INTO records (external_transaction_id,transaction_code,transaction_type,external_account_id,product_type,transaction_date,transaction_amount,debit_credit,business_personal,domestic_international,risk_rating,customer_industry_type) VALUES {}",insert_list.connect(", ")),&[]).unwrap();
+            connection.execute(&format!("INSERT INTO transactions (external_transaction_id,transaction_code,transaction_type,external_account_id,product_type,transaction_date,transaction_amount,debit_credit,business_personal,domestic_international,risk_rating,customer_industry_type) VALUES {}",insert_list.connect(", ")),&[]).unwrap();
             insert_list.clear();
         }
     }
     //println!("{:?}",final_csv);
-    connection.execute(&format!("INSERT INTO records (record_type,amount) VALUES {}",insert_list.connect(", ")),&[]).unwrap();
+    println!("{:?}",insert_list);
+    connection.execute(&format!("INSERT INTO transactions (external_transaction_id,transaction_code,transaction_type,external_account_id,product_type,transaction_date,transaction_amount,debit_credit,business_personal,domestic_international,risk_rating,customer_industry_type) VALUES {}",insert_list.connect(", ")),&[]).unwrap();
     println!("{:?}",insert_list.len());
     let b=time::now();
     println!("{:?}",b-a);

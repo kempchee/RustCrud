@@ -35,7 +35,7 @@ CREATE TABLE records (
 
 CREATE TABLE transactions (
   id serial not null,
-  external_transaction_id varchar(100)
+  external_transaction_id varchar(100),
   transaction_code varchar(100),
   transaction_type varchar(100),
   external_account_id varchar(100),
