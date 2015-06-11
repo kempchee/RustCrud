@@ -81,7 +81,7 @@ struct InboundTransaction{
     external_account_id:String,
     product_type:String,
     transaction_date:String,
-    transaction_amount:String,
+    transaction_amount:Option<String>,
     debit_credit:String,
     business_personal:String,
     domestic_international:String,
@@ -196,18 +196,26 @@ fn upload_records_inserts(request: &mut Request) -> IronResult<Response> {
 
 fn upload_transactions_inserts(request: &mut Request) -> IronResult<Response> {
     let a=time::now();
-    println!("{:?}",a);
     //thread::sleep_ms(5000);
-    let re = Regex::new(r"((?s)Content-Type: text/csv\r\n\r\n.*?\n\r)").unwrap();
-    let new_re=Regex::new(r"(\s)+").unwrap();
+    //let re = Regex::new(r"((?s)Content-Type: text/csv\r\n\r\n.*?\n\r)").unwrap();
+    //let new_re=Regex::new(r"(\s)+").unwrap();
+    let space_re=Regex::new(r"[\n\r]{2,}").unwrap();
     let mut payload = String::new();
     request.body.read_to_string(&mut payload).unwrap();
-    let form_match=re.captures(&payload).unwrap().at(1).unwrap_or("").replace("Content-Type: text/csv","\n");
-    let final_csv=Regex::new(r"\s{2,}").unwrap().replace_all(&form_match,"");
+    let b=time::now();
+    println!("{:?}",b-a);
+    //let form_match=re.captures(&payload).unwrap().at(1).unwrap_or("").replace("Content-Type: text/csv","\n");
+    let c=time::now();
+    println!("{:?}",c-a);
+    let final_csv=space_re.split(&payload).collect::<Vec<&str>>()[3];
+    let d=time::now();
+    println!("{:?}",d-a);
     let mut new_csv_rdr = csv::Reader::from_string(final_csv);
     let mutex = request.get::<persistent::Read<PostgresWrapper>>().unwrap();
     let connection=mutex.lock().unwrap();
     let mut insert_list=vec![];
+    let e=time::now();
+    println!("{:?}",e-a);
     for transaction in new_csv_rdr.decode() {
         let transaction: InboundTransaction = transaction.unwrap();
         //let statement=connection.prepare("INSERT INTO records (record_type,amount) VALUES ($1,$2) RETURNING *").unwrap();
@@ -219,31 +227,54 @@ fn upload_transactions_inserts(request: &mut Request) -> IronResult<Response> {
         }else{
             "NULL".to_string()
         };
-        insert_list.push(format!("('{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', {}, '{}')",
+        let transaction_amount=if transaction.transaction_amount.is_some(){
+            transaction.transaction_amount.unwrap()
+        }else{
+            "NULL".to_string()
+        };
+        insert_list.push(format!("('{}', '{}', '{}', '{}', '{}', '{}', {}, '{}', '{}', '{}', {}, '{}')",
             transaction.external_transaction_id,
             transaction.transaction_code,
             transaction.transaction_type,
             transaction.external_account_id,
             transaction.product_type,
             date,
-            transaction.transaction_amount,
+            transaction_amount,
             transaction.debit_credit,
             transaction.business_personal,
             transaction.domestic_international,
             risk_rating,
             transaction.customer_industry_type
         ));
-        if insert_list.len()>9999{
+        if insert_list.len()>50000{
             connection.execute(&format!("INSERT INTO transactions (external_transaction_id,transaction_code,transaction_type,external_account_id,product_type,transaction_date,transaction_amount,debit_credit,business_personal,domestic_international,risk_rating,customer_industry_type) VALUES {}",insert_list.connect(", ")),&[]).unwrap();
             insert_list.clear();
         }
     }
     //println!("{:?}",final_csv);
-    println!("{:?}",insert_list);
+    //println!("{:?}",insert_list);
     connection.execute(&format!("INSERT INTO transactions (external_transaction_id,transaction_code,transaction_type,external_account_id,product_type,transaction_date,transaction_amount,debit_credit,business_personal,domestic_international,risk_rating,customer_industry_type) VALUES {}",insert_list.connect(", ")),&[]).unwrap();
     println!("{:?}",insert_list.len());
+    let f=time::now();
+    println!("{:?}",f-a);
+    Ok(Response::with((status::Ok, json::encode(&payload).unwrap())))
+    //Ok(Response::with((status::Ok, "{\"client\":{\"id\":\"46\",\"name\":\"zzz\"}}")))
+}
+
+fn upload_transactions_experimental(request: &mut Request) -> IronResult<Response> {
+    let a=time::now();
+    //thread::sleep_ms(5000);
+    let re = Regex::new(r"((?s)Content-Type: text/csv\r\n\r\n.*?\n\r)").unwrap();
+    let space_re=Regex::new(r"[\n\r]{2,}").unwrap();
+    let new_re=Regex::new(r"(\s)+").unwrap();
+    let mut payload = String::new();
+    request.body.read_to_string(&mut payload).unwrap();
+    //println!("{:?}",payload);
     let b=time::now();
     println!("{:?}",b-a);
+    println!("{:?}",space_re.split(&payload).collect::<Vec<&str>>()[3]);
+    let c=time::now();
+    println!("{:?}",c-a);
     Ok(Response::with((status::Ok, json::encode(&payload).unwrap())))
     //Ok(Response::with((status::Ok, "{\"client\":{\"id\":\"46\",\"name\":\"zzz\"}}")))
 }
@@ -308,6 +339,7 @@ fn main() {
     router.post("/upload_records",upload_records);
     router.post("/upload_records_inserts",upload_records_inserts);
     router.post("/upload_transactions_inserts",upload_transactions_inserts);
+    router.post("/upload_transactions_experimental",upload_transactions_experimental);
     let mut message_chain = Chain::new(router);
     message_chain.link_after(ResponseTime);
     message_chain.link(persistent::Read::<PostgresWrapper>::both(conn));

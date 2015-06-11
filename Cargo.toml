@@ -15,5 +15,6 @@ chrono="*"
 time="*"
 bodyparser="*"
 regex = "*"
+urlencoded="*"
 [dependencies.persistent]
 git = "https://github.com/iron/persistent.git"
