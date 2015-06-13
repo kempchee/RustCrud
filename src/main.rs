@@ -1,4 +1,5 @@
 #![feature(collections)]
+#[inline(always)]
 extern crate iron;
 extern crate router;
 extern crate hyper;
@@ -199,7 +200,7 @@ fn upload_transactions_inserts(request: &mut Request) -> IronResult<Response> {
     //thread::sleep_ms(5000);
     //let re = Regex::new(r"((?s)Content-Type: text/csv\r\n\r\n.*?\n\r)").unwrap();
     //let new_re=Regex::new(r"(\s)+").unwrap();
-    let space_re=Regex::new(r"[\n\r]{2,}").unwrap();
+    //let space_re=Regex::new(r"\n\r\n").unwrap();
     let mut payload = String::new();
     request.body.read_to_string(&mut payload).unwrap();
     let b=time::now();
@@ -207,7 +208,10 @@ fn upload_transactions_inserts(request: &mut Request) -> IronResult<Response> {
     //let form_match=re.captures(&payload).unwrap().at(1).unwrap_or("").replace("Content-Type: text/csv","\n");
     let c=time::now();
     println!("{:?}",c-a);
-    let final_csv=space_re.split(&payload).collect::<Vec<&str>>()[3];
+    //let final_csv=space_re.split(&payload).collect::<Vec<&str>>()[1];
+    let beg_find=payload.find("\n\r\n").unwrap();
+    let end_find=payload.rfind("\n\r\n").unwrap();
+    let final_csv=payload.slice_chars(beg_find+3,end_find);
     let d=time::now();
     println!("{:?}",d-a);
     let mut new_csv_rdr = csv::Reader::from_string(final_csv);
@@ -216,10 +220,14 @@ fn upload_transactions_inserts(request: &mut Request) -> IronResult<Response> {
     let mut insert_list=vec![];
     let e=time::now();
     println!("{:?}",e-a);
+    let mut finish_insert=true;
     for transaction in new_csv_rdr.decode() {
         let transaction: InboundTransaction = transaction.unwrap();
-        //let statement=connection.prepare("INSERT INTO records (record_type,amount) VALUES ($1,$2) RETURNING *").unwrap();
-        //let query_result=statement.query(&[&record.record_type,&record.amount]).unwrap();
+        let date_regex=Regex::new(r"[0-9]{1,2}/[0-9]{1,2}/[0-9]{4}").unwrap();
+        if date_regex.is_match(&transaction.transaction_date){}else{
+            finish_insert=false;
+            break;
+        }
         let date_vec=transaction.transaction_date.split("/").map(|x|x.parse::<u32>().ok().unwrap()).collect::<Vec<u32>>();
         let date=chrono::naive::date::NaiveDate::from_ymd(date_vec[2] as i32,date_vec[0],date_vec[1]);
         let risk_rating=if transaction.risk_rating.is_some(){
@@ -253,11 +261,14 @@ fn upload_transactions_inserts(request: &mut Request) -> IronResult<Response> {
     }
     //println!("{:?}",final_csv);
     //println!("{:?}",insert_list);
-    connection.execute(&format!("INSERT INTO transactions (external_transaction_id,transaction_code,transaction_type,external_account_id,product_type,transaction_date,transaction_amount,debit_credit,business_personal,domestic_international,risk_rating,customer_industry_type) VALUES {}",insert_list.connect(", ")),&[]).unwrap();
-    println!("{:?}",insert_list.len());
-    let f=time::now();
-    println!("{:?}",f-a);
-    Ok(Response::with((status::Ok, json::encode(&payload).unwrap())))
+    if finish_insert{
+        connection.execute(&format!("INSERT INTO transactions (external_transaction_id,transaction_code,transaction_type,external_account_id,product_type,transaction_date,transaction_amount,debit_credit,business_personal,domestic_international,risk_rating,customer_industry_type) VALUES {}",insert_list.connect(", ")),&[]).unwrap();
+        let f=time::now();
+        println!("{:?}",f-a);
+        Ok(Response::with((status::Ok, "{\"message\":\"Your upload was successful!\"}")))
+    }else{
+        Ok(Response::with((status::Status::InternalServerError, "{\"message\":\"Your upload contained malformed data!\"}")))
+    }
     //Ok(Response::with((status::Ok, "{\"client\":{\"id\":\"46\",\"name\":\"zzz\"}}")))
 }
 
@@ -265,14 +276,24 @@ fn upload_transactions_experimental(request: &mut Request) -> IronResult<Respons
     let a=time::now();
     //thread::sleep_ms(5000);
     let re = Regex::new(r"((?s)Content-Type: text/csv\r\n\r\n.*?\n\r)").unwrap();
-    let space_re=Regex::new(r"[\n\r]{2,}").unwrap();
+    let space_re=Regex::new(r"\n\r\n").unwrap();
     let new_re=Regex::new(r"(\s)+").unwrap();
     let mut payload = String::new();
     request.body.read_to_string(&mut payload).unwrap();
     //println!("{:?}",payload);
     let b=time::now();
     println!("{:?}",b-a);
-    println!("{:?}",space_re.split(&payload).collect::<Vec<&str>>()[3]);
+    //println!("{:?}",space_re.split(&payload).collect::<Vec<&str>>()[3]);
+    //for i in space_re.find_iter(&payload){
+        //println!("{:?}",i);
+    //}
+    let beg_find=payload.find("\n\r\n").unwrap();
+    let end_find=payload.rfind("\n\r\n").unwrap();
+    let final_string=payload.slice_chars(beg_find+3,end_find);
+    println!("{:?}",beg_find);
+    println!("{:?}",end_find);
+    let new_string=payload.chars().rev();
+    //println!("{:?}",payload);
     let c=time::now();
     println!("{:?}",c-a);
     Ok(Response::with((status::Ok, json::encode(&payload).unwrap())))
