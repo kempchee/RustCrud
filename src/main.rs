@@ -215,15 +215,14 @@ fn upload_transactions_inserts(request: &mut Request) -> IronResult<Response> {
     let d=time::now();
     println!("{:?}",d-a);
     let mut new_csv_rdr = csv::Reader::from_string(final_csv);
-    let mutex = request.get::<persistent::Read<PostgresWrapper>>().unwrap();
-    let connection=mutex.lock().unwrap();
+    let connection =Connection::connect("postgres://kempchee:kempchee@localhost/rust_test", &SslMode::None).unwrap();
     let mut insert_list=vec![];
     let e=time::now();
     println!("{:?}",e-a);
     let mut finish_insert=true;
+    let date_regex=Regex::new(r"[0-9]{1,2}/[0-9]{1,2}/[0-9]{4}").unwrap();
     for transaction in new_csv_rdr.decode() {
         let transaction: InboundTransaction = transaction.unwrap();
-        let date_regex=Regex::new(r"[0-9]{1,2}/[0-9]{1,2}/[0-9]{4}").unwrap();
         if date_regex.is_match(&transaction.transaction_date){}else{
             finish_insert=false;
             break;
