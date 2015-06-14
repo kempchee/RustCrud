@@ -11,6 +11,7 @@ extern crate csv;
 extern crate chrono;
 extern crate regex;
 extern crate time;
+extern crate websocket;
 
 use postgres::{Connection, SslMode};
 use iron::prelude::*;
@@ -31,6 +32,8 @@ use std::collections::BTreeMap;
 use regex::Regex;
 use chrono::naive::datetime::NaiveDateTime;
 use std::fmt;
+use websocket::{Server, Message, Sender, Receiver};
+use websocket::header::WebSocketProtocol;
 
 
 #[derive(RustcDecodable, RustcEncodable)]
@@ -110,6 +113,12 @@ pub struct PostgresWrapper;
 
 impl Key for PostgresWrapper{
     type Value=Arc<Mutex<postgres::Connection>>;
+}
+
+pub struct SocketsWrapper;
+
+impl Key for SocketsWrapper{
+    type Value=Arc<Mutex<Vec<websocket::server::sender::Sender<websocket::stream::WebSocketStream>>>>;
 }
 
 impl AfterMiddleware for ResponseTime {
@@ -272,6 +281,9 @@ fn upload_transactions_inserts(request: &mut Request) -> IronResult<Response> {
 }
 
 fn upload_transactions_experimental(request: &mut Request) -> IronResult<Response> {
+    let sockets_vector = request.get::<persistent::Read<SocketsWrapper>>().unwrap();
+    //println!("{:?}",sockets_vector.lock().unwrap()[0]);
+    sockets_vector.lock().unwrap()[0].send_message(websocket::Message::Text("some super secret message".to_string())).unwrap();
     let a=time::now();
     //thread::sleep_ms(5000);
     let re = Regex::new(r"((?s)Content-Type: text/csv\r\n\r\n.*?\n\r)").unwrap();
@@ -326,6 +338,8 @@ fn create_client(request: &mut Request) -> IronResult<Response> {
 
 fn clients_index(request: &mut Request) -> IronResult<Response> {
     let mutex = request.get::<persistent::Read<PostgresWrapper>>().unwrap();
+    let sockets_vector = request.get::<persistent::Read<SocketsWrapper>>().unwrap();
+    println!("{:?}",sockets_vector.lock().unwrap().len());
     let connection=mutex.lock().unwrap();
     let statement=connection.prepare("SELECT * from client").unwrap();
     let mut clients_string="{\"clients\":[".to_string();
@@ -335,24 +349,87 @@ fn clients_index(request: &mut Request) -> IronResult<Response> {
             id:row.get(0),
             name:row.get(1)
         };
-        if i!=query_result.iter().collect::<Vec<postgres::Row>>().len()-1{
+        if i!=query_result.iter().collect::<Vec<postgres::rows::Row>>().len()-1{
             clients_string=clients_string+&json::encode(&client).unwrap()+",";
         }else{
             clients_string=clients_string+&json::encode(&client).unwrap();
         }
-        println!("{}",json::encode(&client).unwrap());
-        println!("{}",i);
+        //println!("{}",json::encode(&client).unwrap());
+        //println!("{}",i);
     }
     clients_string=clients_string+"]}";
-    println!("{}",clients_string);
+    //println!("{}",clients_string);
     Ok(Response::with((status::Ok, clients_string)))
 
 }
 
+
 fn main() {
     let conn = Arc::new(Mutex::new(Connection::connect("postgres://kempchee:kempchee@localhost/rust_test", &SslMode::None).unwrap()));
     let mut router=Router::new();
+    let original_connections=Arc::new(Mutex::new(vec![]));
+    let socket_connections=original_connections.clone();
+    thread::spawn(move||{
+        let server = Server::bind("localhost:4000").unwrap();
 
+    	for connection in server {
+            let socket_connections = socket_connections.clone();
+    		// Spawn a new thread for each connection.
+    		thread::spawn(move ||{
+    			let request = connection.unwrap().read_request().unwrap(); // Get the request
+    			let headers = request.headers.clone(); // Keep the headers so we can check them
+
+    			request.validate().unwrap(); // Validate the request
+
+    			let mut response = request.accept(); // Form a response
+
+    			if let Some(&WebSocketProtocol(ref protocols)) = headers.get() {
+    				if protocols.contains(&("rust-websocket".to_string())) {
+    					// We have a protocol we want to use
+    					response.headers.set(WebSocketProtocol(vec!["rust-websocket".to_string()]));
+    				}
+    			}
+
+    			let mut client = response.send().unwrap(); // Send the response
+
+    			let ip = client.get_mut_sender()
+    				.get_mut()
+    				.peer_addr()
+    				.unwrap();
+
+    			println!("Connection from {}", ip);
+
+    			let message = Message::Text("Hello".to_string());
+    			client.send_message(message).unwrap();
+
+    			let (mut sender, mut receiver) = client.split();
+                {
+                    let mut socket_connections = socket_connections.lock().unwrap();
+                    socket_connections.push(sender);
+                }
+                for message in receiver.incoming_messages() {
+    				let message = message.unwrap();
+
+    				match message {
+    					Message::Close(_) => {
+    						let message = Message::Close(None);
+    						//sender.send_message(message).unwrap();
+    						println!("Client {} disconnected", ip);
+    						return;
+    					}
+    					Message::Ping(data) => {
+    						let message = Message::Pong(data);
+    						//sender.send_message(message).unwrap();
+    					}
+    					_ => ()
+    				}
+			      }
+
+                //println!("{:?}",socket_connections.unwrap());
+
+    		});
+    	}
+    });
     router.get("/", hello_world);
     router.get("/clients",clients_index);
     router.post("/clients", create_client);
@@ -363,6 +440,7 @@ fn main() {
     let mut message_chain = Chain::new(router);
     message_chain.link_after(ResponseTime);
     message_chain.link(persistent::Read::<PostgresWrapper>::both(conn));
+    message_chain.link(persistent::Read::<SocketsWrapper>::both(original_connections));
 
     Iron::new(message_chain).http("localhost:3000").unwrap();
     println!("On 3000");

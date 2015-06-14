@@ -16,5 +16,6 @@ time="*"
 bodyparser="*"
 regex = "*"
 urlencoded="*"
+websocket="*"
 [dependencies.persistent]
 git = "https://github.com/iron/persistent.git"
