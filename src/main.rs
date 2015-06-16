@@ -34,6 +34,7 @@ use chrono::naive::datetime::NaiveDateTime;
 use std::fmt;
 use websocket::{Server, Message, Sender, Receiver};
 use websocket::header::WebSocketProtocol;
+use std::collections::HashMap;
 
 
 #[derive(RustcDecodable, RustcEncodable)]
@@ -118,7 +119,8 @@ impl Key for PostgresWrapper{
 pub struct SocketsWrapper;
 
 impl Key for SocketsWrapper{
-    type Value=Arc<Mutex<Vec<websocket::server::sender::Sender<websocket::stream::WebSocketStream>>>>;
+    //type Value=Arc<Mutex<Vec<websocket::server::sender::Sender<websocket::stream::WebSocketStream>>>>;
+    type Value=Arc<Mutex<HashMap<&'static str,websocket::server::sender::Sender<websocket::stream::WebSocketStream>>>>;
 }
 
 impl AfterMiddleware for ResponseTime {
@@ -281,33 +283,12 @@ fn upload_transactions_inserts(request: &mut Request) -> IronResult<Response> {
 }
 
 fn upload_transactions_experimental(request: &mut Request) -> IronResult<Response> {
-    let sockets_vector = request.get::<persistent::Read<SocketsWrapper>>().unwrap();
-    //println!("{:?}",sockets_vector.lock().unwrap()[0]);
-    sockets_vector.lock().unwrap()[0].send_message(websocket::Message::Text("some super secret message".to_string())).unwrap();
-    let a=time::now();
-    //thread::sleep_ms(5000);
-    let re = Regex::new(r"((?s)Content-Type: text/csv\r\n\r\n.*?\n\r)").unwrap();
-    let space_re=Regex::new(r"\n\r\n").unwrap();
-    let new_re=Regex::new(r"(\s)+").unwrap();
-    let mut payload = String::new();
-    request.body.read_to_string(&mut payload).unwrap();
-    //println!("{:?}",payload);
-    let b=time::now();
-    println!("{:?}",b-a);
-    //println!("{:?}",space_re.split(&payload).collect::<Vec<&str>>()[3]);
-    //for i in space_re.find_iter(&payload){
-        //println!("{:?}",i);
-    //}
-    let beg_find=payload.find("\n\r\n").unwrap();
-    let end_find=payload.rfind("\n\r\n").unwrap();
-    let final_string=payload.slice_chars(beg_find+3,end_find);
-    println!("{:?}",beg_find);
-    println!("{:?}",end_find);
-    let new_string=payload.chars().rev();
-    //println!("{:?}",payload);
-    let c=time::now();
-    println!("{:?}",c-a);
-    Ok(Response::with((status::Ok, json::encode(&payload).unwrap())))
+    let mut sockets_vector = request.get::<persistent::Read<SocketsWrapper>>().unwrap();
+    let mut socket=sockets_vector.lock().unwrap();
+    let mut sender=socket.get_mut("hello").unwrap();
+    sender.send_message(websocket::Message::Text("{\"message\":\"Nothing much yet!\"}".to_string())).unwrap();
+    println!("{:?}",time::precise_time_ns());
+    Ok(Response::with((status::Ok, "{\"message\":\"Your upload was successful!\"}")))
     //Ok(Response::with((status::Ok, "{\"client\":{\"id\":\"46\",\"name\":\"zzz\"}}")))
 }
 
@@ -367,7 +348,7 @@ fn clients_index(request: &mut Request) -> IronResult<Response> {
 fn main() {
     let conn = Arc::new(Mutex::new(Connection::connect("postgres://kempchee:kempchee@localhost/rust_test", &SslMode::None).unwrap()));
     let mut router=Router::new();
-    let original_connections=Arc::new(Mutex::new(vec![]));
+    let original_connections=Arc::new(Mutex::new(HashMap::<&'static str,websocket::server::sender::Sender<websocket::stream::WebSocketStream>>::new()));
     let socket_connections=original_connections.clone();
     thread::spawn(move||{
         let server = Server::bind("localhost:4000").unwrap();
@@ -401,11 +382,12 @@ fn main() {
 
     			let message = Message::Text("Hello".to_string());
     			client.send_message(message).unwrap();
-
+                let socket_id=time::precise_time_ns();
+                client.send_message(websocket::Message::Text("{\"new_socket_id\":".to_string()+&socket_id.to_string()+"}")).unwrap();
     			let (mut sender, mut receiver) = client.split();
                 {
                     let mut socket_connections = socket_connections.lock().unwrap();
-                    socket_connections.push(sender);
+                    socket_connections.insert("hello",sender);
                 }
                 for message in receiver.incoming_messages() {
     				let message = message.unwrap();

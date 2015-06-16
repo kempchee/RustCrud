@@ -33,19 +33,32 @@ CREATE TABLE records (
   created_at timestamp default current_timestamp
 )
 
-CREATE TABLE transactions (
-  id serial not null,
-  external_transaction_id varchar(100),
-  transaction_code varchar(100),
-  transaction_type varchar(100),
-  external_account_id varchar(100),
-  product_type varchar(100),
-  transaction_date date,
-  transaction_amount double precision,
-  debit_credit varchar(100),
-  business_personal varchar(100),
-  domestic_international varchar(100),
-  risk_rating int,
-  customer_industry_type varchar(100),
-  created_at timestamp default current_timestamp
-)
+BEGIN
+
+  CREATE TABLE transactions (
+    id serial not null,
+    external_transaction_id varchar(100),
+    transaction_code varchar(100),
+    transaction_type varchar(100),
+    external_account_id varchar(100),
+    product_type varchar(100),
+    transaction_date date,
+    transaction_amount double precision,
+    debit_credit varchar(100),
+    business_personal varchar(100),
+    domestic_international varchar(100),
+    risk_rating int,
+    customer_industry_type varchar(100),
+    created_at timestamp default current_timestamp
+  )
+
+  CREATE  INDEX  "transactions_on_engagement_id" ON "transactions"  ("engagement_id")
+  CREATE  INDEX  "transactions_on_data_source_id" ON "transactions"  ("data_source_id")[0m
+  CREATE  INDEX  "transactions_on_product_type" ON "transactions"  ("product_type")
+  CREATE  INDEX  "transactions_on_transaction_code" ON "transactions"  ("transaction_code")[0m
+  CREATE  INDEX  "transactions_on_transaction_type" ON "transactions"  ("transaction_type")
+  CREATE  INDEX  "transactions_on_transaction_date" ON "transactions"  ("transaction_date")[0m
+  CREATE  INDEX  "transactions_on_external_transaction_id" ON "transactions"  ("external_transaction_id")
+  CREATE  INDEX  "transactions_on_external_account_id" ON "transactions"  ("external_account_id")[0m
+  CREATE  INDEX  "transactions_on_transaction_amount" ON "transactions"  ("transaction_amount")
+COMMIT
