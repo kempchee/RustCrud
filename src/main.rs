@@ -294,10 +294,27 @@ fn upload_transactions_inserts(request: &mut Request) -> IronResult<Response> {
 }
 
 fn upload_transactions_experimental(request: &mut Request) -> IronResult<Response> {
-    let mut sockets_vector = request.get::<persistent::Read<SocketsWrapper>>().unwrap();
-    let mut socket=sockets_vector.lock().unwrap();
-    let mut sender=socket.get_mut("hello").unwrap();
-    sender.send_message(websocket::Message::Text("{\"message\":\"Nothing much yet!\"}".to_string())).unwrap();
+    //let mut sockets_vector = request.get::<persistent::Read<SocketsWrapper>>().unwrap();
+    //let mut socket=sockets_vector.lock().unwrap();
+    //let mut sender=socket.get_mut("hello").unwrap();
+    //sender.send_message(websocket::Message::Text("{\"message\":\"Nothing much yet!\"}".to_string())).unwrap();
+    let params=HashMap::<String,String>::new();
+    let mut payload = String::new();
+    request.body.read_to_string(&mut payload).unwrap();
+    let boundary_regex=Regex::new(r"(boundary=.*$)").unwrap();
+    let mut new_vector=request.headers.get_raw("content-type").unwrap();
+    let content_type=std::str::from_utf8(&new_vector[0][..]).unwrap();
+    let mut boundary_capture=boundary_regex.captures(content_type).unwrap().at(1).unwrap_or("");
+    let mut boundary=boundary_capture.slice_chars(13,boundary_capture.len());
+    let separator_regex_string="((?s)".to_string()+&boundary+".*?"+"------)";
+    println!("{:?}",separator_regex_string);
+    let params_regex=Regex::new(&separator_regex_string).unwrap();
+    for i in params_regex.captures_iter(&payload){
+        println!("{:?}","yo");
+        println!("{:?}",i.at(1).unwrap_or(""));
+    }
+    println!("{:?}",boundary);
+    println!("{:?}",payload);
     println!("{:?}",time::precise_time_ns());
     Ok(Response::with((status::Ok, "{\"message\":\"Your upload was successful!\"}")))
     //Ok(Response::with((status::Ok, "{\"client\":{\"id\":\"46\",\"name\":\"zzz\"}}")))
