@@ -309,9 +309,13 @@ fn upload_transactions_experimental(request: &mut Request) -> IronResult<Respons
     let separator_regex_string="((?s)".to_string()+&boundary+".*?"+"------)";
     println!("{:?}",separator_regex_string);
     let params_regex=Regex::new(&separator_regex_string).unwrap();
-    for i in params_regex.captures_iter(&payload){
-        println!("{:?}","yo");
-        println!("{:?}",i.at(1).unwrap_or(""));
+    for form_part in params_regex.captures_iter(&payload){
+        let form_part_text=form_part.at(1).unwrap_or("");
+        println!("{:?}",form_part_text);
+        let name_string=Regex::new(r"(name=.*?[\s;])").unwrap().captures(form_part_text).unwrap().at(1).unwrap_or("");
+        let name_value_string=name_string.slice_chars(6,name_string.len()-2);
+        println!("{:?}",name_string);
+        println!("{:?}",name_value_string);
     }
     println!("{:?}",boundary);
     println!("{:?}",payload);
