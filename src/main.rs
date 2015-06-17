@@ -208,6 +208,9 @@ fn upload_records_inserts(request: &mut Request) -> IronResult<Response> {
 
 fn upload_transactions_inserts(request: &mut Request) -> IronResult<Response> {
     let a=time::now();
+    let mut sockets_vector = request.get::<persistent::Read<SocketsWrapper>>().unwrap();
+    let mut socket=sockets_vector.lock().unwrap();
+    let mut sender=socket.get_mut("hello").unwrap();
     //thread::sleep_ms(5000);
     //let re = Regex::new(r"((?s)Content-Type: text/csv\r\n\r\n.*?\n\r)").unwrap();
     //let new_re=Regex::new(r"(\s)+").unwrap();
@@ -232,23 +235,28 @@ fn upload_transactions_inserts(request: &mut Request) -> IronResult<Response> {
     println!("{:?}",e-a);
     let mut finish_insert=true;
     let date_regex=Regex::new(r"[0-9]{1,2}/[0-9]{1,2}/[0-9]{4}").unwrap();
-    for transaction in new_csv_rdr.decode() {
-        let transaction: InboundTransaction = transaction.unwrap();
+    let rows = new_csv_rdr.decode().collect::<csv::Result<Vec<InboundTransaction>>>().unwrap();
+    let mut count = rows.len();
+    let mut rows_length=count as f64;
+    let mut current_index:f64=0.0;
+    let null_value="NULL".to_string();
+    for transaction in rows.iter() {
+        //let transaction:InboundTransaction=transaction.unwrap();
         if date_regex.is_match(&transaction.transaction_date){}else{
             finish_insert=false;
             break;
         }
         let date_vec=transaction.transaction_date.split("/").map(|x|x.parse::<u32>().ok().unwrap()).collect::<Vec<u32>>();
         let date=chrono::naive::date::NaiveDate::from_ymd(date_vec[2] as i32,date_vec[0],date_vec[1]);
-        let risk_rating=if transaction.risk_rating.is_some(){
-            transaction.risk_rating.unwrap()
+        let ref risk_rating=if transaction.risk_rating.is_some(){
+            transaction.risk_rating.as_ref().unwrap()
         }else{
-            "NULL".to_string()
+            &null_value
         };
-        let transaction_amount=if transaction.transaction_amount.is_some(){
-            transaction.transaction_amount.unwrap()
+        let ref transaction_amount=if transaction.transaction_amount.is_some(){
+            transaction.transaction_amount.as_ref().unwrap()
         }else{
-            "NULL".to_string()
+            &null_value
         };
         insert_list.push(format!("('{}', '{}', '{}', '{}', '{}', '{}', {}, '{}', '{}', '{}', {}, '{}')",
             transaction.external_transaction_id,
@@ -267,12 +275,15 @@ fn upload_transactions_inserts(request: &mut Request) -> IronResult<Response> {
         if insert_list.len()>50000{
             connection.execute(&format!("INSERT INTO transactions (external_transaction_id,transaction_code,transaction_type,external_account_id,product_type,transaction_date,transaction_amount,debit_credit,business_personal,domestic_international,risk_rating,customer_industry_type) VALUES {}",insert_list.connect(", ")),&[]).unwrap();
             insert_list.clear();
+            current_index+=50000.0;
+            sender.send_message(websocket::Message::Text("{\"message\":\"transactions_created\",\"upload_status\":".to_string()+&(((current_index/rows_length)*100.0).to_string())+"}")).unwrap();
         }
     }
     //println!("{:?}",final_csv);
     //println!("{:?}",insert_list);
     if finish_insert{
         connection.execute(&format!("INSERT INTO transactions (external_transaction_id,transaction_code,transaction_type,external_account_id,product_type,transaction_date,transaction_amount,debit_credit,business_personal,domestic_international,risk_rating,customer_industry_type) VALUES {}",insert_list.connect(", ")),&[]).unwrap();
+        sender.send_message(websocket::Message::Text("{\"message\":\"transactions_created\",\"upload_status\":100}".to_string())).unwrap();
         let f=time::now();
         println!("{:?}",f-a);
         Ok(Response::with((status::Ok, "{\"message\":\"Your upload was successful!\"}")))
@@ -379,9 +390,6 @@ fn main() {
     				.unwrap();
 
     			println!("Connection from {}", ip);
-
-    			let message = Message::Text("Hello".to_string());
-    			client.send_message(message).unwrap();
                 let socket_id=time::precise_time_ns();
                 client.send_message(websocket::Message::Text("{\"new_socket_id\":".to_string()+&socket_id.to_string()+"}")).unwrap();
     			let (mut sender, mut receiver) = client.split();
